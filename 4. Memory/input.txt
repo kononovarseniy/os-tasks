@@ -1,0 +1,14 @@
+MALLOC(3)                  Linux Programmer's Manual                 MALLOC(3)
+
+NAME
+       malloc, free, calloc, realloc - allocate and free dynamic memory
+
+SYNOPSIS
+       #include <stdlib.h>
+
+       void *malloc(size_t size);
+       void free(void *ptr);
+       void *calloc(size_t nmemb, size_t size);
+       void *realloc(void *ptr, size_t size);
+       void *reallocarray(void *ptr, size_t nmemb, size_t size);
+.

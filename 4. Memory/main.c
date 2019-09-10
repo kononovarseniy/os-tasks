@@ -34,12 +34,20 @@ char *read_line() {
 struct list_node *make_node(char *data) {
     struct list_node *node = (struct list_node *) malloc(sizeof(struct list_node));
     if (node == NULL) {
-        perror("Unnable to allocate memory fpo a list node");
+        perror("Unnable to allocate memory for a list node");
         exit(1);
     }
     node->data = data;
     node->next = NULL;
     return node;
+}
+
+void free_list(struct list_node *node) {
+    if (node == NULL)
+        return;
+    free_list(node->next);
+    free(node->data);
+    free(node);
 }
 
 int main()
@@ -53,8 +61,11 @@ int main()
             last = last->next = node;
     }
     
-    for (struct list_node *node = head; node; node = node->next)
+    for (struct list_node *node = head; node; node = node->next) {
         printf("%s", node->data);
-        
+    }
+
+    free_list(head);
+
     return 0;
 }

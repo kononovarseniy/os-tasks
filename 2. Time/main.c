@@ -8,7 +8,10 @@ extern char *tzname[];
 void print_time(const time_t *t, char *tz_var) {
     struct tm *sp;
     
-    putenv(tz_var);
+    if (putenv(tz_var)) {
+        perror("Unable to set environment variable");
+        return;
+    }
     
     sp = localtime(t);
     printf("localtime (%s):\n\t", tz_var);
@@ -25,7 +28,7 @@ int main()
     (void) time( &now );
     printf("ctime: %s", ctime( &now ) );
 
-    print_time(&now, "TZ=");
+    print_time(&now, "TZ="); // UTC
     print_time(&now, "TZ=<+07>-7");
     print_time(&now, "TZ=:Asia/Novosibirsk");
     print_time(&now, "TZ=PST8PDT");

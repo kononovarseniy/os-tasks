@@ -6,85 +6,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "line_list.h"
+#include "read_line.h"
+
 //#define DEBUG
-
-struct line {
-    off_t offset;
-    off_t len;
-};
-
-struct node {
-    struct line line;
-    struct node *next;
-};
-
-struct list {
-    struct node *head;
-    struct node *last;
-};
 
 #define BUF_SIZE 1024
 char buf[BUF_SIZE];
-
-struct node *make_node(struct line *line, struct node *next) {
-    struct node *node = (struct node *) malloc(sizeof(struct node));
-    if (node == NULL)
-        return NULL;
-    node->line = *line;
-    node->next = next;
-    return node;
-}
-
-void free_node_recursive(struct node *head) {
-    while (head != NULL) {
-        struct node *next = head->next;
-        free(head);
-        head = next;
-    }
-}
-
-void init_list(struct list *list) {
-    list->head = NULL;
-    list->last = NULL;
-}
-
-void free_list(struct list *list) {
-    free_node_recursive(list->head);
-}
-
-struct node *get_node(struct node *head, unsigned long offset) {
-    while (offset-- && head != NULL)
-        head = head->next;
-    return head;
-}
-
-int add_line(struct list *list, struct line *line) {
-    struct node *new = make_node(line, NULL);
-    if (new == NULL)
-        return 0;
-
-    if (list->head == NULL)
-        list->last = list->head = new;
-    else
-        list->last = list->last->next = new;
-
-    return 1;
-}
-
-void debug_print_lines() {
-#ifdef DEBUG
-    int i = 1;
-    struct node *c = head;
-    while (c != NULL) {
-        printf("Line #%d at %ld has length %ld\n", i,
-                (long) c->line.offset,
-                (long) c->line.len);
-
-        c = c->next;
-        i++;
-    }
-#endif
-}
 
 int scan_file(int fd, struct list *list) {
     int new_line = 1;
@@ -149,6 +77,16 @@ int print_line(int fd, struct line *line) {
     return 1;
 }
 
+int print_lines(int fd, struct list *table) {
+    struct node *n = table->head;
+    while (n != NULL) {
+        if (!print_line(fd, &n->line))
+            return 0;
+        n = n->next;
+    }
+    return 1;
+}
+
 int str_to_long(const char *str, long *res) {
     char *end;
     errno = 0;
@@ -159,12 +97,43 @@ int str_to_long(const char *str, long *res) {
     return 1;
 }
 
+/*
+ * Read non empty line that firt in size-2 characters (underlying reqad_line()
+ * uses last char of null-terminated string to indicate the end of line).
+ * Resulting string is null-terminated and do not contains '\n'.
+ */
+int input_valid_line(struct file *f, char *buf, size_t size) {
+    for(;;) {
+        printf("Enter line number or 0 to quit\n");
+        ssize_t len;
+        int too_long = 0;
+        for(;;) {
+            len = read_line(f, buf, size, 5);
+            if (len == RL_FAIL || len == RL_EOF || len == RL_TIMEOUT)
+                return len;
+
+            if (len == 1) // Empty line
+                continue;
+            if (buf[len - 1] == '\n')
+                break;
+            else
+                too_long = 1;
+        }
+        if (!too_long) {
+            // Replace '\n' with '\0'
+            buf[len - 1] = '\0';
+            return 0;
+        }
+        printf("Input string is too long\n");
+    }    
+}
+
 int main(int argc, const char *argv[]) {
     if (argc != 2) {
         printf("No file name specified\n");
         return 1;
     }
-    
+
     const char *filename = argv[1];
     int fd;
 
@@ -173,23 +142,33 @@ int main(int argc, const char *argv[]) {
         return 1;
     }
 
+    int err = 0;
     struct list table;
     if (scan_file(fd, &table)) {
-        debug_print_lines();
+        struct file f;
+        f.fd = 0;
+        f.buf = make_buf(1024);
 
-        while (1) {
-            printf("Enter line number or 0 to quit\n");
-            char input[100];
-            if (fgets(input, 100, stdin) == NULL) {
-                fprintf(stderr, "Unable to read user input\n");
+        while (!err) {
+            int should_quit = 0;
+            char input[22];
+            switch (input_valid_line(&f, input, 22)) {
+                case RL_EOF:
+                    should_quit = 1;
+                    break;
+                case RL_FAIL:
+                    fprintf(stderr, "input_valid_line failed\n");
+                    err = 1;
+                    continue;
+                case RL_TIMEOUT:
+                    if (!print_lines(fd, &table))
+                        fprintf(stderr, "print_lines failed\n");
+                    should_quit = 1;
+                    break;
+            }
+            if (should_quit)
                 break;
-            }
-            char *end;
-            if ((end = strchr(input, '\n')) == NULL) {
-                printf("Input is too long\n");
-                continue;
-            }
-            *end = '\0';
+
             long num;
             if (!str_to_long(input, &num)) {
                 printf("Input string is not a number or too long\n");
@@ -207,11 +186,15 @@ int main(int argc, const char *argv[]) {
                 printf("No such line\n");
                 continue;
             }
+
             if (!print_line(fd, &node->line)) {
                 fprintf(stderr, "print_line failed\n");
+                err = 1;
                 break;
             }
         }
+
+        free_buf(f.buf);
     }
 
     if (close(fd)) {
@@ -219,5 +202,5 @@ int main(int argc, const char *argv[]) {
         return 1;
     }
 
-    return 0;
+    return err;
 }

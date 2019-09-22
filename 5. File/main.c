@@ -159,12 +159,145 @@ int str_to_long(const char *str, long *res) {
     return 1;
 }
 
+struct buffer {
+    void *buf;
+    size_t cap;
+    size_t pos;
+    size_t len;
+};
+
+struct file {
+    int fd;
+    struct buffer *buf;
+};
+
+struct buffer *make_buf(size_t cap) {
+    void *buf = malloc(cap);
+    if (buf == NULL)
+        return NULL;
+
+    struct buffer *res = malloc(sizeof(struct buffer));
+    if (res == NULL)
+        return NULL;
+
+    res->buf = buf;
+    res->cap = cap;
+    res->pos = 0;
+    res->len = 0;
+    return res;
+}
+
+void free_buf(struct buffer *buf) {
+    free(buf->buf);
+    free(buf);
+}
+
+/*
+ * Copy line from buffer.
+ * Copies at most size characters from buffer including line-break.
+ * This function doesn't instert line terminator.
+ * Returns the number of copied characters. 
+ */
+size_t buf_consume_line(struct buffer *buf, char *res, size_t size) {
+    size_t cnt = buf->len <= size ? buf->len : size;
+    char *buf_start = buf->buf + buf->pos;
+    for (size_t i = 0; i < cnt; i++) {
+        if (buf_start[i] == '\n') {
+            cnt = i + 1;
+            break;
+        }
+    }
+
+    memcpy(res, buf->buf + buf->pos, cnt);
+    buf->pos += cnt;
+    buf->len -= cnt;
+    return cnt;
+}
+
+/*
+ * Read line of text from file and stores it into the buffer pointed by res.
+ * At most one less than size characters (counting line break) will be read.
+ * End of file considered line break.
+ * If the string is fully read the last character of res is '\n'.
+ * Returns the length of read string,
+ * RL_FAIL if an IO error occured,
+ * RL_EOF if nothing can be read because end of file is reached. 
+ */
+#define RL_FAIL -1
+#define RL_EOF  -2
+ssize_t read_line(struct file *f, char *res, size_t size) {
+    char *start = res;
+    int fd = f->fd;
+    struct buffer *buf = f->buf;
+    if (size == 0)
+        return 0;
+    size--; // Reserve space for '\0'.
+    while (size) {
+        if (!buf->len) {
+            ssize_t bytes_read = read(fd, buf->buf, buf->cap);
+            if (bytes_read == 0) {
+                if (res != start) { // String is not empty
+                    *res++ = '\n';
+                    break; // Next call to read_line will detect EOF.
+                }
+                return RL_EOF;
+            }
+
+            if (bytes_read == -1) {
+                perror("read_line: read failed");
+                return RL_FAIL;
+            }
+            buf->pos = 0;
+            buf->len = bytes_read;
+        }
+
+        size_t cnt = buf_consume_line(buf, res, size);
+        res += cnt;
+        size -= cnt;
+        if (res[-1] == '\n')
+            break;
+    }
+    *res = '\0';
+    return res - start;
+}
+
+/*
+ * Read non empty line that firt in size-2 characters (underlying reqad_line()
+ * uses last char of null-terminated string to indicate the end of line).
+ * Resulting string is null-terminated and do not contains '\n'.
+ */
+int input_valid_line(struct file *f, char *buf, size_t size) {
+    for(;;) {
+        printf("Enter line number or 0 to quit\n");
+        ssize_t len;
+        int too_long = 0;
+        for(;;) {
+            len = read_line(f, buf, size);
+            if (len == RL_FAIL || len == RL_EOF)
+                return len;
+
+            if (len == 1) // Empty line
+                continue;
+            if (buf[len - 1] == '\n')
+                break;
+            else
+                too_long = 1;
+        }
+        if (!too_long) {
+            // Replace '\n' with '\0'
+            buf[len - 1] = '\0';
+            return 0;
+        }
+        printf("Input string is too long\n");
+    }    
+}
+
 int main(int argc, const char *argv[]) {
     if (argc != 2) {
         printf("No file name specified\n");
         return 1;
     }
-    
+
     const char *filename = argv[1];
     int fd;
 
@@ -173,23 +306,27 @@ int main(int argc, const char *argv[]) {
         return 1;
     }
 
+    int err = 0;
     struct list table;
     if (scan_file(fd, &table)) {
         debug_print_lines();
 
-        while (1) {
-            printf("Enter line number or 0 to quit\n");
-            char input[100];
-            if (fgets(input, 100, stdin) == NULL) {
-                fprintf(stderr, "Unable to read user input\n");
-                break;
+        struct file f;
+        f.fd = 0;
+        f.buf = make_buf(1024);
+
+        while (!err) {
+            char input[22];
+            switch (input_valid_line(&f, input, 22)) {
+                case RL_EOF:
+                    strcpy(input, "0");
+                    break;
+                case RL_FAIL:
+                    fprintf(stderr, "input_valid_line failed\n");
+                    err = 1;
+                    continue;
             }
-            char *end;
-            if ((end = strchr(input, '\n')) == NULL) {
-                printf("Input is too long\n");
-                continue;
-            }
-            *end = '\0';
+
             long num;
             if (!str_to_long(input, &num)) {
                 printf("Input string is not a number or too long\n");
@@ -207,11 +344,15 @@ int main(int argc, const char *argv[]) {
                 printf("No such line\n");
                 continue;
             }
+
             if (!print_line(fd, &node->line)) {
                 fprintf(stderr, "print_line failed\n");
+                err = 1;
                 break;
             }
         }
+
+        free_buf(f.buf);
     }
 
     if (close(fd)) {
@@ -219,5 +360,5 @@ int main(int argc, const char *argv[]) {
         return 1;
     }
 
-    return 0;
+    return err;
 }

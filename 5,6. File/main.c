@@ -57,21 +57,6 @@ int scan_file(int fd, struct list *list) {
     return success;
 }
 
-void debug_print_lines() {
-#ifdef DEBUG
-    int i = 1;
-    struct node *c = head;
-    while (c != NULL) {
-        printf("Line #%d at %ld has length %ld\n", i,
-                (long) c->line.offset,
-                (long) c->line.len);
-
-        c = c->next;
-        i++;
-    }
-#endif
-}
-
 int print_line(int fd, struct line *line) {
     lseek(fd, line->offset, SEEK_SET);
     off_t count_left = line->len;
@@ -88,6 +73,16 @@ int print_line(int fd, struct line *line) {
             fprintf(stderr, "Write failed\n");
             return 0;
         }
+    }
+    return 1;
+}
+
+int print_lines(int fd, struct list *table) {
+    struct node *n = table->head;
+    while (n != NULL) {
+        if (!print_line(fd, &n->line))
+            return 0;
+        n = n->next;
     }
     return 1;
 }
@@ -113,8 +108,8 @@ int input_valid_line(struct file *f, char *buf, size_t size) {
         ssize_t len;
         int too_long = 0;
         for(;;) {
-            len = read_line(f, buf, size);
-            if (len == RL_FAIL || len == RL_EOF)
+            len = read_line(f, buf, size, 5);
+            if (len == RL_FAIL || len == RL_EOF || len == RL_TIMEOUT)
                 return len;
 
             if (len == 1) // Empty line
@@ -150,23 +145,29 @@ int main(int argc, const char *argv[]) {
     int err = 0;
     struct list table;
     if (scan_file(fd, &table)) {
-        debug_print_lines();
-
         struct file f;
         f.fd = 0;
         f.buf = make_buf(1024);
 
         while (!err) {
+            int should_quit = 0;
             char input[22];
             switch (input_valid_line(&f, input, 22)) {
                 case RL_EOF:
-                    strcpy(input, "0");
+                    should_quit = 1;
                     break;
                 case RL_FAIL:
                     fprintf(stderr, "input_valid_line failed\n");
                     err = 1;
                     continue;
+                case RL_TIMEOUT:
+                    if (!print_lines(fd, &table))
+                        fprintf(stderr, "print_lines failed\n");
+                    should_quit = 1;
+                    break;
             }
+            if (should_quit)
+                break;
 
             long num;
             if (!str_to_long(input, &num)) {

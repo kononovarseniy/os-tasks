@@ -144,6 +144,7 @@ int main(int argc, const char *argv[]) {
 
     int err = 0;
     struct list table;
+    init_list(&table);
     if (scan_file(fd, &table)) {
         struct file f;
         f.fd = 0;
@@ -196,6 +197,7 @@ int main(int argc, const char *argv[]) {
 
         free_buf(f.buf);
     }
+    free_list(&table);
 
     if (close(fd)) {
         perror("Unable to close file");

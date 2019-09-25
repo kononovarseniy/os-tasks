@@ -60,6 +60,7 @@ int main()
         else
             last = last->next = node;
     }
+    free(line);
     
     for (struct list_node *node = head; node; node = node->next) {
         printf("%s", node->data);

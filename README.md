@@ -1,4 +1,4 @@
 # os-tasks
-The solution of problems from the course "Operating Systems".
+Solutions of problems from the course "Operating Systems".
 
-Performed by Kononov Arseny, group 17352, department of physics, Novosibirsk State University.
+Performed by Kononov Arseniy, group 17352, department of physics, Novosibirsk State University.

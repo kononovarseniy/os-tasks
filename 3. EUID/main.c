@@ -3,8 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-extern char *tzname[];
-
 void print_ids() {
     uid_t uid = getuid(), euid = geteuid();
     

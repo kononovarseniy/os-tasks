@@ -15,45 +15,35 @@
 char buf[BUF_SIZE];
 
 int scan_file(int fd, struct list *list) {
-    int new_line = 1;
     struct line curr;
-    int success = 1;
-    for(;;) {
+    curr.offset = 0;
+    int eof = 0, new_line = 1;
+    while (!eof) {
         off_t pos = lseek(fd, 0, SEEK_CUR);
         ssize_t bytes_read = read(fd, buf, BUF_SIZE);
-        if (bytes_read == -1) {
-            perror("Error while readig file");
-            success = 0;
-            break;
-        }
+        if (bytes_read == -1)
+            return 0;
+        // EOF
         if (!bytes_read) {
-            if (!new_line) {
-                curr.len = pos - curr.offset;
-                if (!add_line(list, &curr)) {
-                    perror("Unable to record line position");
-                    success = 0;
-                }
-            }
-            break; // EOF
+            // Simulate line break
+            buf[0] = '\n';
+            bytes_read = 1;
+            eof = 1;
         }
-        for (size_t o = 0; o < bytes_read; o++) {
+        for (size_t i = 0; i < bytes_read; i++) {
             if (new_line) {
-                curr.offset = pos + o;
+                curr.offset = pos + i;
                 new_line = 0;
             }
-            if (buf[o] == '\n') {
-                curr.len = pos + o - curr.offset;
+            if (buf[i] == '\n') {
+                curr.len = pos + i - curr.offset;
                 new_line = 1;
-                if (!add_line(list, &curr)) {
-                    perror("Unable to record line position");
-                    success = 0;
-                    break;
-                }
+                if (!add_line(list, &curr))
+                    return 0;
             }
         }
-        pos += bytes_read;
     }
-    return success;
+    return 1;
 }
 
 int print_line(int fd, struct line *line) {
@@ -144,7 +134,9 @@ int main(int argc, const char *argv[]) {
     int err = 0;
     struct list table;
     init_list(&table);
-    if (scan_file(fd, &table)) {
+    if (!scan_file(fd, &table))
+        perror("File scan failed");
+    else {
         struct file *f = make_buffered_file(0, 1024);
 
         while (!err) {

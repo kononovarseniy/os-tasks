@@ -15,46 +15,35 @@
 char buf[BUF_SIZE];
 
 int scan_file(int fd, struct list *list) {
-    int new_line = 1;
     struct line curr;
-    int success = 1;
-    while (success) {
+    curr.offset = 0;
+    int eof = 0, new_line = 1;
+    while (!eof) {
         off_t pos = lseek(fd, 0, SEEK_CUR);
         ssize_t bytes_read = read(fd, buf, BUF_SIZE);
-        if (bytes_read == -1) {
-            perror("Error while readig file");
-            success = 0;
-            continue;
-        }
+        if (bytes_read == -1)
+            return 0;
+        // EOF
         if (!bytes_read) {
-            if (!new_line) {
-                curr.len = pos - curr.offset;
-                if (!add_line(list, &curr)) {
-                    perror("Unable to record line position");
-                    success = 0;
-                    continue;
-                }
-            }
-            break; // EOF
+            // Simulate line break
+            buf[0] = '\n';
+            bytes_read = 1;
+            eof = 1;
         }
-        for (size_t o = 0; o < bytes_read; o++) {
+        for (size_t i = 0; i < bytes_read; i++) {
             if (new_line) {
-                curr.offset = pos + o;
+                curr.offset = pos + i;
                 new_line = 0;
             }
-            if (buf[o] == '\n') {
-                curr.len = pos + o - curr.offset;
+            if (buf[i] == '\n') {
+                curr.len = pos + i - curr.offset;
                 new_line = 1;
-                if (!add_line(list, &curr)) {
-                    perror("Unable to record line position");
-                    success = 0;
-                    continue;
-                }
+                if (!add_line(list, &curr))
+                    return 0;
             }
         }
-        pos += bytes_read;
     }
-    return success;
+    return 1;
 }
 
 int print_line(int fd, struct line *line) {
@@ -98,7 +87,7 @@ int str_to_long(const char *str, long *res) {
 }
 
 /*
- * Read non empty line that firt in size-2 characters (underlying reqad_line()
+ * Read non empty line that firt in size-2 characters (underlying read_line()
  * uses last char of null-terminated string to indicate the end of line).
  * Resulting string is null-terminated and do not contains '\n'.
  */
@@ -145,15 +134,15 @@ int main(int argc, const char *argv[]) {
     int err = 0;
     struct list table;
     init_list(&table);
-    if (scan_file(fd, &table)) {
-        struct file f;
-        f.fd = 0;
-        f.buf = make_buf(1024);
+    if (!scan_file(fd, &table))
+        perror("File scan failed");
+    else {
+        struct file *f = make_buffered_file(0, 1024);
 
         while (!err) {
             int should_quit = 0;
             char input[22];
-            switch (input_valid_line(&f, input, 22)) {
+            switch (input_valid_line(f, input, 22)) {
                 case RL_EOF:
                     should_quit = 1;
                     break;
@@ -195,7 +184,7 @@ int main(int argc, const char *argv[]) {
             }
         }
 
-        free_buf(f.buf);
+        free_buffered_file(f);
     }
     free_list(&table);
 

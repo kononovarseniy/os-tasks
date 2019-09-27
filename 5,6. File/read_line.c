@@ -7,14 +7,28 @@
 #include <unistd.h>
 #include <string.h>
 
+struct buffer {
+    void *buf;
+    size_t cap;
+    size_t pos;
+    size_t len;
+};
+
+struct file {
+    int fd;
+    struct buffer *buf;
+};
+
 struct buffer *make_buf(size_t cap) {
     void *buf = malloc(cap);
     if (buf == NULL)
         return NULL;
 
     struct buffer *res = malloc(sizeof(struct buffer));
-    if (res == NULL)
+    if (res == NULL) {
+        free(buf);
         return NULL;
+    }
 
     res->buf = buf;
     res->cap = cap;
@@ -28,6 +42,34 @@ void free_buf(struct buffer *buf) {
     free(buf);
 }
 
+struct file *make_buffered_file(int fd, size_t buf_size) {
+    struct buffer *buf = make_buf(buf_size);
+    if (buf == NULL)
+        return NULL;
+
+    struct file *f = malloc(sizeof(struct file));
+    if (f == NULL) {
+        free_buf(buf);
+        return NULL;
+    }
+
+    f->fd = fd;
+    f->buf = buf;
+
+    return f;
+}
+
+void free_buffered_file(struct file *f) {
+    free_buf(f->buf);
+    free(f);
+}
+
+/*
+ * Copy line from buffer.
+ * Copies at most size characters from buffer including line-break.
+ * This function doesn't instert line terminator.
+ * Returns the number of copied characters.
+ */
 size_t buf_consume_line(struct buffer *buf, char *res, size_t size) {
     size_t cnt = buf->len <= size ? buf->len : size;
     char *buf_start = buf->buf + buf->pos;
@@ -65,12 +107,16 @@ ssize_t read_line(struct file *f, char *res, size_t size, time_t timeout) {
     if (size == 0)
         return 0;
     size--; // Reserve space for '\0'.
-    int timer = start_timer(timeout);
+
+    int timer = -1;
+    if (timeout != -1)
+        timer = start_timer(timeout);
+
     int err = 0;
     while (size) {
         if (!buf->len) {
             ssize_t bytes_read;
-            if (timeout == -1) {
+            if (timer == -1) {
                 bytes_read = read(fd, buf->buf, buf->cap);
             } else {
                 fd_set rfds;
@@ -122,7 +168,9 @@ ssize_t read_line(struct file *f, char *res, size_t size, time_t timeout) {
             break;
     }
 
-    close(timer);
+    if (timer != -1)
+        close(timer);
+
     if (err)
         return err;
 

@@ -18,13 +18,13 @@ int scan_file(int fd, struct list *list) {
     int new_line = 1;
     struct line curr;
     int success = 1;
-    while (success) {
+    for(;;) {
         off_t pos = lseek(fd, 0, SEEK_CUR);
         ssize_t bytes_read = read(fd, buf, BUF_SIZE);
         if (bytes_read == -1) {
             perror("Error while readig file");
             success = 0;
-            continue;
+            break;
         }
         if (!bytes_read) {
             if (!new_line) {
@@ -32,7 +32,6 @@ int scan_file(int fd, struct list *list) {
                 if (!add_line(list, &curr)) {
                     perror("Unable to record line position");
                     success = 0;
-                    continue;
                 }
             }
             break; // EOF
@@ -48,7 +47,7 @@ int scan_file(int fd, struct list *list) {
                 if (!add_line(list, &curr)) {
                     perror("Unable to record line position");
                     success = 0;
-                    continue;
+                    break;
                 }
             }
         }
@@ -98,7 +97,7 @@ int str_to_long(const char *str, long *res) {
 }
 
 /*
- * Read non empty line that firt in size-2 characters (underlying reqad_line()
+ * Read non empty line that firt in size-2 characters (underlying read_line()
  * uses last char of null-terminated string to indicate the end of line).
  * Resulting string is null-terminated and do not contains '\n'.
  */
@@ -146,14 +145,12 @@ int main(int argc, const char *argv[]) {
     struct list table;
     init_list(&table);
     if (scan_file(fd, &table)) {
-        struct file f;
-        f.fd = 0;
-        f.buf = make_buf(1024);
+        struct file *f = make_buffered_file(0, 1024);
 
         while (!err) {
             int should_quit = 0;
             char input[22];
-            switch (input_valid_line(&f, input, 22)) {
+            switch (input_valid_line(f, input, 22)) {
                 case RL_EOF:
                     should_quit = 1;
                     break;
@@ -195,7 +192,7 @@ int main(int argc, const char *argv[]) {
             }
         }
 
-        free_buf(f.buf);
+        free_buffered_file(f);
     }
     free_list(&table);
 

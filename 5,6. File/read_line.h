@@ -3,28 +3,10 @@
 
 #include <sys/types.h>
 
-struct buffer {
-    void *buf;
-    size_t cap;
-    size_t pos;
-    size_t len;
-};
+struct file;
 
-struct file {
-    int fd;
-    struct buffer *buf;
-};
-
-struct buffer *make_buf(size_t cap);
-void free_buf(struct buffer *buf);
-
-/*
- * Copy line from buffer.
- * Copies at most size characters from buffer including line-break.
- * This function doesn't instert line terminator.
- * Returns the number of copied characters. 
- */
-size_t buf_consume_line(struct buffer *buf, char *res, size_t size);
+struct file *make_buffered_file(int fd, size_t buf_size);
+void free_buffered_file(struct file *f);
 
 /*
  * Read line of text from file and stores it into the buffer pointed by res.

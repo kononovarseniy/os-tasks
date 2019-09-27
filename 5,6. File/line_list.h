@@ -18,12 +18,8 @@ struct list {
     struct node *last;
 };
 
-struct node *make_node(struct line *line, struct node *next);
-void free_node_recursive(struct node *head);
-
 void init_list(struct list *list);
 void free_list(struct list *list);
-void list_add(struct list *list, struct node *node);
 
 struct node *get_node(struct node *head, unsigned long offset);
 int add_line(struct list *list, struct line *line);

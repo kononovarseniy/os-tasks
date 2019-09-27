@@ -28,17 +28,17 @@ void free_list(struct list *list) {
     free_node_recursive(list->head);
 }
 
+struct node *get_node(struct node *head, unsigned long offset) {
+    while (offset-- && head != NULL)
+        head = head->next;
+    return head;
+}
+
 void list_add(struct list *list, struct node *node) {
     if (list->head == NULL)
         list->last = list->head = node;
     else
         list->last = list->last->next = node;
-}
-
-struct node *get_node(struct node *head, unsigned long offset) {
-    while (offset-- && head != NULL)
-        head = head->next;
-    return head;
 }
 
 int add_line(struct list *list, struct line *line) {

@@ -1,7 +1,7 @@
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <wait.h>
 #include "shell.h"
 
 char *infile, *outfile, *appfile;
@@ -17,11 +17,12 @@ int main(int argc, char *argv[])
 
     /* PLACE SIGNAL CODE HERE */
 
-    sprintf(prompt,"[%s] ", argv[0]);
+    sprintf(prompt,"%s>", argv[0]);
 
     while (promptline(prompt, line, sizeof(line)) > 0) {    /* until eof  */
         if ((ncmds = parseline(line)) <= 0)
             continue;   /* read next line */
+
 #ifdef DEBUG
         {
             int i, j;
@@ -36,9 +37,20 @@ int main(int argc, char *argv[])
 #endif
 
         for (i = 0; i < ncmds; i++) {
-
-            /*  FORK AND EXECUTE  */
-
+            pid_t child = fork();
+            if (child == -1) {
+                perror("fork");
+            } else if (child == 0) {
+                if (execvp(cmds[i].cmdargs[0], cmds[i].cmdargs) == -1) {
+                    perror("exec");
+                    return 1;
+                }
+            } else {
+                int wstatus;
+                if (waitpid(child, &wstatus, 0) == -1) {
+                    perror("waitpid");
+                }
+            }
         }
 
     }  /* close while */

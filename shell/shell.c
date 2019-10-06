@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include "shell.h"
 
+//#define DEBUG
+
 char *infile, *outfile, *appfile;
 struct command cmds[MAXCMDS];
 char bkgrnd;
@@ -14,6 +16,7 @@ int main(int argc, char *argv[])
     char line[1024];      /*  allow large command lines  */
     int ncmds;
     char prompt[50];      /* shell prompt */
+    int bg_count = 0;
 
     /* PLACE SIGNAL CODE HERE */
 
@@ -28,7 +31,7 @@ int main(int argc, char *argv[])
             int i, j;
             for (i = 0; i < ncmds; i++) {
                 for (j = 0; cmds[i].cmdargs[j] != (char *) NULL; j++)
-                    fprintf(stderr, "cmd[%d].cmdargs[%d] = %s\n",
+                    fprintf(stderr, "cmds[%d].cmdargs[%d] = %s\n",
                             i, j, cmds[i].cmdargs[j]);
                 fprintf(stderr, "cmds[%d].cmdflag = %o\n", i,
                         cmds[i].cmdflag);
@@ -46,10 +49,28 @@ int main(int argc, char *argv[])
                     return 1;
                 }
             } else {
-                int wstatus;
-                if (waitpid(child, &wstatus, 0) == -1) {
-                    perror("waitpid");
+                if (bkgrnd) {
+                    bg_count++;
+                    printf("[%d]\n", child);
+                } else {
+                    if (waitpid(child, NULL, 0) == -1) {
+                        perror("waitpid");
+                    }
                 }
+            }
+        }
+        // Check children state
+        while (bg_count > 0) {
+            pid_t pid = waitpid(-1, NULL, WNOHANG);
+            if (pid == -1) {
+                perror("waitpid");
+                break;
+            } else if (pid == 0) {
+                // No changes. Stop checking
+                break;
+            } else {
+                bg_count--;
+                printf("[%d] Done\n", pid);
             }
         }
 

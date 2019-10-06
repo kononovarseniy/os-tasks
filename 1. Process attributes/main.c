@@ -79,14 +79,6 @@ void print_vars() {
 void put_var(const char *var) {
     printf("Setting %s\n", var);
     // The 'var' string will became part of the environment, so it needs to be copied.
-    /*size_t len = strlen(var) + 1;
-    char *copy = (char *)malloc(sizeof char * len);
-    if (copy == NULL)
-    {
-        perror("Unable to allocate memory for environment variable");
-        return;
-    }
-    strcpy(copy, var);*/
     char *copy = strdup(var);
     if (copy == NULL) {
         perror("Unable to set environment variable");

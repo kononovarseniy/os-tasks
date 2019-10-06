@@ -1,14 +1,64 @@
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <stdio.h>
-#include <unistd.h>
+#include <errno.h>
+#include <sys/types.h> // pid_t
+#include <sys/wait.h> // waitpid
+#include <unistd.h> // dup2, close, fork, execvp
+#include <fcntl.h> // open
+#include <stdio.h> // perror, *printf
 #include "shell.h"
 
-//#define DEBUG
+#define DEBUG
 
 char *infile, *outfile, *appfile;
 struct command cmds[MAXCMDS];
 char bkgrnd;
+
+int move_fd(int old_fd, int new_fd) {
+    if (old_fd == new_fd)
+        return 0;
+
+    int dup_res;
+    do {
+        dup_res = dup2(old_fd, new_fd);
+        if (dup_res == -1 && errno != EINTR)
+            return -1;
+    } while(dup_res == -1);
+
+    if (close(old_fd))
+        perror("Cannot close old file descriptor");
+
+    return 0;
+}
+
+int open_files(int *in_fd, int *out_fd) {
+    if (infile) {
+        *in_fd = open(infile, O_RDONLY);
+        if (*in_fd == -1) {
+            perror("Cannot open file for reading");
+            return -1;
+        }
+    }
+    if (appfile) {
+        *out_fd = open(appfile, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (*out_fd == -1) {
+            perror("Cannot open file for append");
+            return -1;
+        }
+    } else if (outfile) {
+        *out_fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (*out_fd == -1) {
+            perror("Cannot open file for writing");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+void close_files(int in_fd, int out_fd) {
+    if (in_fd != -1 && close(in_fd))
+        perror("Cannot close input file");
+    if (out_fd != -1 && close(out_fd))
+        perror("Cannot close output file");
+}
 
 int main(int argc, char *argv[])
 {
@@ -36,29 +86,55 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "cmds[%d].cmdflag = %o\n", i,
                         cmds[i].cmdflag);
             }
+            if (infile)
+                fprintf(stderr, "infile: %s\n", infile);
+            if (outfile)
+                fprintf(stderr, "outfile: %s\n", outfile);
+            if (appfile)
+                fprintf(stderr, "appfile: %s\n", appfile);
         }
 #endif
 
-        for (i = 0; i < ncmds; i++) {
-            pid_t child = fork();
-            if (child == -1) {
-                perror("fork");
-            } else if (child == 0) {
-                if (execvp(cmds[i].cmdargs[0], cmds[i].cmdargs) == -1) {
-                    perror("exec");
-                    return 1;
-                }
-            } else {
-                if (bkgrnd) {
-                    bg_count++;
-                    printf("[%d]\n", child);
+        // Open files before starting any commands
+        int in_fd = -1, out_fd = -1;
+        if (open_files(&in_fd, &out_fd) == 0) {
+            for (i = 0; i < ncmds; i++) {
+                pid_t child = fork();
+                if (child == -1) {
+                    // Fork failed
+                    perror("fork");
+                } else if (child == 0) {
+                    // Child process
+
+                    // Redirect I/O if needed
+                    if (i == 0 && in_fd != -1 && move_fd(in_fd, 0) == -1) {
+                        perror("Failed to redirect input");
+                        return 1;
+                    }
+                    if (i == ncmds - 1 && out_fd != -1 && move_fd(out_fd, 1) == -1) {
+                        perror("Failed to redirect output");
+                        return 1;
+                    }
+                    // Execute command
+                    if (execvp(cmds[i].cmdargs[0], cmds[i].cmdargs) == -1) {
+                        perror("exec");
+                        return 1;
+                    }
                 } else {
-                    if (waitpid(child, NULL, 0) == -1) {
-                        perror("waitpid");
+                    // Main process
+                    if (bkgrnd) {
+                        bg_count++;
+                        printf("[%d]\n", child);
+                    } else {
+                        if (waitpid(child, NULL, 0) == -1) {
+                            perror("waitpid");
+                        }
                     }
                 }
             }
         }
+        close_files(in_fd, out_fd);
+
         // Check children state
         while (bg_count > 0) {
             pid_t pid = waitpid(-1, NULL, WNOHANG);

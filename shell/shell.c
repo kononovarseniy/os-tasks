@@ -4,6 +4,7 @@
 #include <unistd.h> // dup2, close, fork, execvp
 #include <fcntl.h> // open
 #include <stdio.h> // perror, *printf
+#include <string.h> // strlen
 #include "shell.h"
 
 #define DEBUG
@@ -64,6 +65,7 @@ int main(int argc, char *argv[])
 {
     register int i;
     char line[1024];      /*  allow large command lines  */
+    char msg[50];
     int ncmds;
     char prompt[50];      /* shell prompt */
     int bg_count = 0;
@@ -124,7 +126,8 @@ int main(int argc, char *argv[])
                     // Main process
                     if (bkgrnd) {
                         bg_count++;
-                        printf("[%d]\n", child);
+                        snprintf(msg, sizeof(msg), "[%d]\n", child);
+                        write(0, msg, strlen(msg) + 1);
                     } else {
                         if (waitpid(child, NULL, 0) == -1) {
                             perror("waitpid");
@@ -146,7 +149,8 @@ int main(int argc, char *argv[])
                 break;
             } else {
                 bg_count--;
-                printf("[%d] Done\n", pid);
+                snprintf(msg, sizeof(msg), "[%d] Done\n", pid);
+                write(0, msg, strlen(msg) + 1);
             }
         }
 

@@ -9,14 +9,19 @@ int promptline(char *prompt, char *line, int sizline)
 
     write(1, prompt, strlen(prompt));
     while (1) {
-        n += read(0, (line + n), sizline-n);
+        ssize_t nread = read(0, (line + n), sizline-n);
+        if (nread == -1) {
+            perror("promptline: read failed");
+            return 0;
+        }
+        n += nread;
         *(line+n) = '\0';
         /*
          *  check to see if command line extends onto
          *  next line.  If so, append next line to command line
          */
 
-        if (*(line+n-2) == '\\' && *(line+n-1) == '\n') {
+        if (n >= 2 && *(line+n-2) == '\\' && *(line+n-1) == '\n') {
             *(line+n) = ' ';
             *(line+n-1) = ' ';
             *(line+n-2) = ' ';

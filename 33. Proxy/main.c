@@ -141,7 +141,7 @@ void accept_connection() {
         // Ignore any errors, but warn about unexpected ones.
         switch (errno) {
             case EAGAIN:
-            case EINTR: // Should never happen because after poll accept does not block.
+            case EINTR: // Should never happen because after poll, accept does not block.
             case ENETDOWN: // Manual recomends to treat following error codes as EAGAIN.
             case EPROTO:
             case ENOPROTOOPT:
@@ -151,7 +151,7 @@ void accept_connection() {
             case EOPNOTSUPP:
             case ENETUNREACH:
                 // Just try again later.
-                break;
+                return;
 
             default:
                 perror("WARNING accept");

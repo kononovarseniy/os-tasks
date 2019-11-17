@@ -25,7 +25,7 @@ int writer_main(int ifd, int ofd) {
     int success = 0;
     while (!success) {
         int res = write(ofd, msg, MSG_SIZE);
-        if (res == -1 && res != EAGAIN && res != EINTR) {
+        if (res == -1 && errno != EAGAIN && errno != EINTR) {
             perror("write failed");
             break;
         }
@@ -48,7 +48,7 @@ int reader_main(int ifd, int ofd) {
     int success = 0;
     while (!success) {
         int res = read(ifd, msg, MSG_SIZE);
-        if (res == -1 && res != EAGAIN && res != EINTR) {
+        if (res == -1 && errno != EAGAIN && errno != EINTR) {
             perror("read failed");
             break;
         }

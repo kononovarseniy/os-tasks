@@ -416,7 +416,7 @@ int main(int argc, char *const argv[]) {
         nfds_t nfds = 1 + 2 * clients_count;
         int cnt = poll(fds, nfds, -1);
         if (cnt == -1) {
-            if (errno == EINTR)
+            if (errno == EINTR || errno == EAGAIN)
                 continue;
             perror("poll");
             break;

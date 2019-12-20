@@ -10,17 +10,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_SOCKETS 1024
-#define MAX_CONNECTIONS (MAX_SOCKETS - 1)
+#define MAX_DESCRIPTORS 1024
+#define MAX_CONNECTIONS (MAX_DESCRIPTORS - 2)
+#define ACCEPTOR_INDEX 0
+#define PIPE_INDEX 1
 
 struct connection_manager {
     size_t buf_size;
     size_t connections_count;
-    struct pollfd fds[MAX_SOCKETS];
+    int pipe;
+    struct pollfd fds[MAX_DESCRIPTORS];
     struct connection *connections[MAX_CONNECTIONS];
 };
 
-#define cm_conn_fd(cm, i) ((cm)->fds[1 + (i)])
+#define cm_conn_fd(cm, i) ((cm)->fds[2 + (i)])
 
 int is_alive(uint8_t state) {
     return !(state & (CS_EOF | CS_CLOSED | CS_DELETE));
@@ -147,7 +150,7 @@ static int cm_get_connection_fd(struct connection_manager *m, int ind) {
     return fd;
 }
 
-struct connection *const*cm_get_connections(struct connection_manager *cm, int *count) {
+struct connection *const *cm_get_connections(struct connection_manager *cm, int *count) {
     *count = cm->connections_count;
     return cm->connections;
 }
@@ -160,8 +163,18 @@ struct connection_manager *init_manager() {
     }
     memset(m, 0, sizeof(struct connection_manager));
 
+    int pipe_fds[2];
+    if (pipe(pipe_fds) == -1) {
+        perror("pipe");
+        free(m);
+        return NULL;
+    }
+
     m->connections_count = 0;
-    m->fds[0].fd = -1;
+    m->fds[ACCEPTOR_INDEX].fd = -1;
+    m->fds[PIPE_INDEX].fd = pipe_fds[0];
+    m->fds[PIPE_INDEX].events = POLLIN;
+    m->pipe = pipe_fds[1];
 
     return m;
 }
@@ -190,8 +203,8 @@ struct connection_manager *init_accepting_manager(
     }
 
     m->buf_size = buf_size;
-    m->fds[0].fd = sock;
-    m->fds[0].events = POLLIN;
+    m->fds[ACCEPTOR_INDEX].fd = sock;
+    m->fds[ACCEPTOR_INDEX].events = POLLIN;
 
     return m;
     abort:
@@ -205,9 +218,16 @@ struct connection_manager *init_accepting_manager(
 }
 
 void destroy_manager(struct connection_manager *m) {
-    if (m->fds[0].fd != -1) {
-        if (close(m->fds[0].fd) == -1)
+    if (m->fds[ACCEPTOR_INDEX].fd != -1) {
+        if (close(m->fds[ACCEPTOR_INDEX].fd) == -1)
             perror("close listening socket");
+    }
+
+    if (close(m->fds[PIPE_INDEX].fd) == -1) {
+        perror("close pipe read end");
+    }
+    if (close(m->pipe) == -1) {
+        perror("close pipe write end");
     }
 
     for (size_t i = 0; i < m->connections_count; i++) {
@@ -322,7 +342,7 @@ static void accept_connection(struct connection_manager *cm) {
     if (cm->connections_count == MAX_CONNECTIONS)
         return;
 
-    int listening_socket = cm->fds[0].fd;
+    int listening_socket = cm->fds[ACCEPTOR_INDEX].fd;
     socklen_t len = sizeof(struct sockaddr_in);
     struct sockaddr_in addr;
     int socket = accept(listening_socket, (struct sockaddr *) &addr, &len);
@@ -426,7 +446,7 @@ int cm_poll(struct connection_manager *cm) {
         }
     }
 
-    nfds_t nfds = 1 + connections_count;
+    nfds_t nfds = 2 + connections_count;
     int cnt = -1;
     while (cnt < 0) {
         cnt = poll(cm->fds, nfds, -1);
@@ -434,11 +454,23 @@ int cm_poll(struct connection_manager *cm) {
             if (errno == EINTR || errno == EAGAIN)
                 continue;
             perror("poll");
-            return -1;
+            return CLOSE_CAUSE_ERROR;
         }
     }
-    if (cm->fds[0].revents & POLLIN)
+
+    if (cm->fds[PIPE_INDEX].revents & POLLIN) {
+        uint8_t cause;
+        int res = read(cm->fds[PIPE_INDEX].fd, &cause, 1);
+        if (res == -1) {
+            perror("cm_poll: pipe read failed");
+        } else if (res != 0) {
+            return cause;
+        }
+    }
+
+    if (cm->fds[ACCEPTOR_INDEX].revents & POLLIN)
         accept_connection(cm);
+
 
     // Transmit/receive data and set connection state on eof/error
     // (Ignore sockets accepted on previous step)
@@ -454,5 +486,12 @@ int cm_poll(struct connection_manager *cm) {
     close_sockets(cm);
     shrink(cm);
 
-    return 0;
+    return CLOSE_CAUSE_NONE;
+}
+
+void cm_shutdown(struct connection_manager *m) {
+    uint8_t cmd = CLOSE_CAUSE_USER;
+    if (write(m->pipe, &cmd, 1) == -1) {
+        perror("ERROR: cannot write to pipe");
+    }
 }

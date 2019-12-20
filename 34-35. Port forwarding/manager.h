@@ -12,6 +12,10 @@
 #define CS_DELETE ((uint8_t)8)
 #define CS_STOPPED ((uint8_t)16)
 
+#define CLOSE_CAUSE_NONE 0
+#define CLOSE_CAUSE_USER 1
+#define CLOSE_CAUSE_ERROR 2
+
 struct connection {
     int id;
     uint8_t state;
@@ -49,6 +53,8 @@ struct connection *make_connection(
         size_t in_buf_size,
         size_t out_buf_size,
         int id);
+
+void cm_shutdown(struct connection_manager *m);
 
 struct connection_manager *init_manager();
 

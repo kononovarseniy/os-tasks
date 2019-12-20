@@ -8,6 +8,7 @@
 #include <signal.h>
 
 static const int buffer_size = 10240;
+struct controller *controller = NULL;
 
 int parse_port(const char *str, in_port_t *res) {
     char *end;
@@ -71,9 +72,9 @@ void parse_args(int argc, char *const argv[]) {
     dst_address.sin_addr = target_ip_addr;
 }
 
-volatile int term_signal_received = 0;
 void termination_signal_handler(int sig) {
-    term_signal_received = 1;
+    if (controller != NULL)
+        shutdown_controller(controller);
 }
 
 void setup_signals() {
@@ -95,7 +96,6 @@ int main(int argc, char *const argv[]) {
     setup_signals();
 
     printf("Starting controller...\n");
-    struct controller *controller;
     if (is_server)
         controller = start_controller(buffer_size, 0, &listen_addr, &dst_address, -1);
     else
@@ -106,8 +106,14 @@ int main(int argc, char *const argv[]) {
         return 1;
     }
 
-    while (!term_signal_received) {
-        if (!update(controller)) {
+#define ever (;;)
+    for ever {
+        int close_cause = update(controller);
+        if (close_cause == CLOSE_CAUSE_USER) {
+            fprintf(stderr, "Controller stopped\n");
+            break;
+        }
+        if (close_cause == CLOSE_CAUSE_ERROR) {
             fprintf(stderr, "Something went wrong\n");
             break;
         }

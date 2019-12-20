@@ -15,6 +15,8 @@ struct controller;
 struct controller *
 start_controller(size_t buf_size, int accepting, struct sockaddr_in *listen_addr, struct sockaddr_in *addr, int backlog);
 
+void shutdown_controller(struct controller *c);
+
 void destroy_controller(struct controller *c);
 
 int update(struct controller *controller);

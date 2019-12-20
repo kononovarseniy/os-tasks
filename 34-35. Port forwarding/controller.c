@@ -280,13 +280,17 @@ start_controller(size_t buf_size,
     destroy_manager(manager);
 
     manager_failed:
-    free(pump);
+    free_pump(pump);
 
     pump_failed:
     free(c);
 
     return NULL;
 
+}
+
+void shutdown_controller(struct controller *c) {
+    cm_shutdown(c->manager);
 }
 
 void destroy_controller(struct controller *c) {
@@ -299,8 +303,9 @@ void destroy_controller(struct controller *c) {
 }
 
 int update(struct controller *controller) {
-    if (cm_poll(controller->manager) == -1)
-        return 0;
+    int cause = cm_poll(controller->manager);
+    if (cause != CLOSE_CAUSE_NONE)
+        return cause;
 
     int count = 0;
     struct connection *const *manager_connections = cm_get_connections(controller->manager, &count);
@@ -309,18 +314,18 @@ int update(struct controller *controller) {
 
     if (count == 0) {
         fprintf(stderr, "controller: no connections\n");
-        return 0;
+        return CLOSE_CAUSE_NONE;
     }
     if (connections[0] == NULL) {
         fprintf(stderr, "controller: no tunnel\n");
-        return 0;
+        return CLOSE_CAUSE_NONE;
     }
 
     int state = handle_state_changes(controller, connections);
-    if (state == STATE_AGAIN) return 1;
-    if (state == STATE_SHUTDOWN) return 0;
+    if (state == STATE_AGAIN) return CLOSE_CAUSE_NONE;
+    if (state == STATE_SHUTDOWN) return CLOSE_CAUSE_ERROR;
 
     pump_transfer(controller->pump, connections);
 
-    return 1;
+    return CLOSE_CAUSE_NONE;
 }
